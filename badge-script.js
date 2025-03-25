@@ -8,7 +8,7 @@
     // Configuration
     const CONFIG = {
         debug: true,                          // Enable console logging for debugging
-        badgeEndpoint: 'https://tagmaster.shopyfi.in/apps/badges', // API endpoint for badge data
+        badgeEndpoint: 'https://tagmaster.shopyfi.in/apps/tagify/badges', // API endpoint for badge data
         scanInterval: 1500,                   // Interval between scans (ms)
         badgeZIndex: 999,                     // Z-index for badges
         badgePrefix: 'tm-badge',              // Class prefix for badges
