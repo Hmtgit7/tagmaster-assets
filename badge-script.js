@@ -1,25 +1,35 @@
 /**
- * Tagmaster Badge Injection Script - Fixed Version
- * For Shopify stores - Properly positions badges on product images
+ * Tagmaster Badge Injection Script
+ * For Shopify stores - Dynamically injects product badges based on store configuration
  */
 (function() {
   // Configuration
   const CONFIG = {
-    debug: false,  // Set to true to enable console logging for debugging
-    apiEndpoint: 'https://tagmaster.shopyfi.in/apps/tagify/badges',
-    badgePrefix: 'tm-badge',
-    containerClass: 'tm-badge-container',
-    scanInterval: 1500,
-    maxScans: 20,
-    badgeZIndex: 9999  // Higher z-index to ensure badges appear above other elements
+    debug: false,  // Enable for console logging
+    apiEndpoint: '/apps/badges',  // Endpoint to fetch badge data
+    scanInterval: 1500,  // Milliseconds between scans
+    maxScans: 20,  // Maximum number of scans to perform
+    badgeZIndex: 999,  // Z-index for badges
+    badgeClassPrefix: 'tm-badge',  // Prefix for badge classes
+    containerClass: 'tm-badge-container'  // Class for containers
   };
 
-  // Utility functions
-  const utils = {
+  /**
+   * Utility module with helper functions
+   */
+  const Utils = {
+    /**
+     * Log messages when debug is enabled
+     * @param {string} message - Message to log
+     * @param {string} type - Log type (log, info, warn, error)
+     * @param {*} data - Optional data to log
+     */
     log: function(message, type = 'log', data = null) {
       if (!CONFIG.debug) return;
+      
       const logger = console[type] || console.log;
       const prefix = '🏷️ Tagmaster: ';
+      
       if (data) {
         logger(prefix + message, data);
       } else {
@@ -27,20 +37,24 @@
       }
     },
 
+    /**
+     * Get the current shop domain using multiple methods
+     * @returns {string} Shop domain
+     */
     getShopDomain: function() {
-      // Try different methods to get the shop domain
-      if (typeof Shopify !== 'undefined' && Shopify.shop) {
+      // Try Shopify object first
+      if (typeof Shopify !== 'undefined' && Shopify?.shop) {
         return Shopify.shop;
       }
 
-      // Try to extract from meta tags
+      // Try meta tags
       const shopTag = document.querySelector('meta[property="og:url"]');
       if (shopTag) {
         try {
           const url = new URL(shopTag.getAttribute('content'));
           return url.hostname;
         } catch (e) {
-          // Ignore URL parsing errors
+          this.log(`Error parsing URL: ${e.message}`, 'error');
         }
       }
 
@@ -48,6 +62,11 @@
       return window.location.hostname;
     },
 
+    /**
+     * Fetch data from API
+     * @param {string} url - API endpoint
+     * @param {Function} callback - Callback function for results
+     */
     fetchData: function(url, callback) {
       fetch(url)
         .then(response => {
@@ -66,6 +85,11 @@
         });
     },
 
+    /**
+     * Convert hex color to RGB
+     * @param {string} hex - Hex color code
+     * @returns {object} RGB values
+     */
     hexToRgb: function(hex) {
       // Remove # if present
       hex = hex.replace(/^#/, '');
@@ -86,9 +110,15 @@
         };
       }
       
-      return { r: 0, g: 0, b: 0 }; // Default to black
+      return { r: 0, g: 0, b: 0 }; // Default to black if parsing fails
     },
 
+    /**
+     * Calculate discount percentage
+     * @param {number|string} compareAtPrice - Original price
+     * @param {number|string} price - Current price
+     * @returns {number} Discount percentage
+     */
     calculateDiscount: function(compareAtPrice, price) {
       if (!compareAtPrice || !price || parseFloat(compareAtPrice) <= parseFloat(price)) {
         return 0;
@@ -96,6 +126,11 @@
       return Math.round(((parseFloat(compareAtPrice) - parseFloat(price)) / parseFloat(compareAtPrice)) * 100);
     },
 
+    /**
+     * Parse money values from various formats
+     * @param {number|string} amount - Money amount
+     * @returns {number} Parsed amount in dollars
+     */
     parseMoney: function(amount) {
       if (!amount) return 0;
       
@@ -104,13 +139,16 @@
         amount = amount.replace(/[^\d.]/g, '');
       }
       
-      // Handle Shopify money format (cents)
+      // Convert from cents to dollars
       return parseFloat(amount) / 100;
     }
   };
 
-  // Badge Manager
+  /**
+   * Badge Manager - Handles all badge-related operations
+   */
   const BadgeManager = {
+    // State management
     state: {
       shopDomain: '',
       badges: [],
@@ -128,15 +166,15 @@
     init: function() {
       if (this.state.initialized) return;
       
-      utils.log('Initializing BadgeManager...');
+      Utils.log('Initializing BadgeManager...');
       
       // Get shop domain
-      this.state.shopDomain = utils.getShopDomain();
-      utils.log(`Shop domain: ${this.state.shopDomain}`);
+      this.state.shopDomain = Utils.getShopDomain();
+      Utils.log(`Shop domain: ${this.state.shopDomain}`);
       
       // Detect page type
       this.detectPageType();
-      utils.log(`Page type detected: ${this.state.pageType}`);
+      Utils.log(`Page type detected: ${this.state.pageType}`);
       
       // Inject base styles
       this.injectBaseStyles();
@@ -152,19 +190,18 @@
      * Detect the current page type
      */
     detectPageType: function() {
-      // Check meta.page (common in many themes)
-      if (typeof meta !== 'undefined' && meta.page && meta.page.pageType) {
+      // Try different methods to detect page type
+      if (typeof meta !== 'undefined' && meta?.page?.pageType) {
         this.state.pageType = meta.page.pageType;
         return;
       }
       
-      // Check Shopify object
-      if (typeof Shopify !== 'undefined' && Shopify.template) {
+      if (typeof Shopify !== 'undefined' && Shopify?.template) {
         this.state.pageType = Shopify.template;
         return;
       }
       
-      // Check URL pattern
+      // Check URL pattern as fallback
       const path = window.location.pathname;
       if (path.includes('/products/')) {
         this.state.pageType = 'product';
@@ -180,10 +217,10 @@
      */
     injectBaseStyles: function() {
       // Don't inject styles twice
-      if (document.getElementById(`${CONFIG.badgePrefix}-styles`)) return;
+      if (document.getElementById(`${CONFIG.badgeClassPrefix}-styles`)) return;
       
       const style = document.createElement('style');
-      style.id = `${CONFIG.badgePrefix}-styles`;
+      style.id = `${CONFIG.badgeClassPrefix}-styles`;
       style.textContent = `
         /* Badge Container */
         .${CONFIG.containerClass} {
@@ -194,7 +231,7 @@
         }
         
         /* Base Badge Styles with better positioning */
-        .${CONFIG.badgePrefix} {
+        .${CONFIG.badgeClassPrefix} {
           position: absolute !important; /* Ensure absolute positioning */
           z-index: ${CONFIG.badgeZIndex} !important; /* Higher z-index to appear above other elements */
           display: block !important;
@@ -208,12 +245,12 @@
         }
         
         /* Make links clickable */
-        .${CONFIG.badgePrefix} a {
+        .${CONFIG.badgeClassPrefix} a {
           pointer-events: auto;
         }
         
         /* More precise badge positions */
-        .${CONFIG.badgePrefix}-pos-1 {
+        .${CONFIG.badgeClassPrefix}-pos-1 {
           top: 10px !important;
           left: 10px !important;
           right: auto !important;
@@ -221,7 +258,7 @@
           transform: none !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-2 {
+        .${CONFIG.badgeClassPrefix}-pos-2 {
           top: 10px !important;
           left: 50% !important;
           right: auto !important;
@@ -230,7 +267,7 @@
           margin-left: 0 !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-3 {
+        .${CONFIG.badgeClassPrefix}-pos-3 {
           top: 10px !important;
           right: 10px !important;
           left: auto !important;
@@ -238,7 +275,7 @@
           transform: none !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-4 {
+        .${CONFIG.badgeClassPrefix}-pos-4 {
           top: 50% !important;
           left: 10px !important;
           right: auto !important;
@@ -247,7 +284,7 @@
           margin-top: 0 !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-5 {
+        .${CONFIG.badgeClassPrefix}-pos-5 {
           top: 50% !important;
           left: 50% !important;
           right: auto !important;
@@ -256,7 +293,7 @@
           margin: 0 !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-6 {
+        .${CONFIG.badgeClassPrefix}-pos-6 {
           top: 50% !important;
           right: 10px !important;
           left: auto !important;
@@ -265,7 +302,7 @@
           margin-top: 0 !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-7 {
+        .${CONFIG.badgeClassPrefix}-pos-7 {
           bottom: 10px !important;
           left: 10px !important;
           top: auto !important;
@@ -273,7 +310,7 @@
           transform: none !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-8 {
+        .${CONFIG.badgeClassPrefix}-pos-8 {
           bottom: 10px !important;
           left: 50% !important;
           top: auto !important;
@@ -282,7 +319,7 @@
           margin-left: 0 !important;
         }
         
-        .${CONFIG.badgePrefix}-pos-9 {
+        .${CONFIG.badgeClassPrefix}-pos-9 {
           bottom: 10px !important;
           right: 10px !important;
           left: auto !important;
@@ -291,13 +328,13 @@
         }
         
         /* Badge Shapes */
-        .${CONFIG.badgePrefix}-standard {
+        .${CONFIG.badgeClassPrefix}-standard {
           border-radius: 4px !important;
           padding: 5px 10px !important;
         }
         
         /* Improved circle badge styles */
-        .${CONFIG.badgePrefix}-circle {
+        .${CONFIG.badgeClassPrefix}-circle {
           border-radius: 50% !important;
           width: 45px !important;
           height: 45px !important;
@@ -309,38 +346,38 @@
         }
         
         /* Stacked Badges */
-        .${CONFIG.badgePrefix}-pos-1.${CONFIG.badgePrefix}-stacked-1 { top: 60px !important; }
-        .${CONFIG.badgePrefix}-pos-2.${CONFIG.badgePrefix}-stacked-1 { top: 60px !important; }
-        .${CONFIG.badgePrefix}-pos-3.${CONFIG.badgePrefix}-stacked-1 { top: 60px !important; }
-        .${CONFIG.badgePrefix}-pos-7.${CONFIG.badgePrefix}-stacked-1 { bottom: 60px !important; }
-        .${CONFIG.badgePrefix}-pos-8.${CONFIG.badgePrefix}-stacked-1 { bottom: 60px !important; }
-        .${CONFIG.badgePrefix}-pos-9.${CONFIG.badgePrefix}-stacked-1 { bottom: 60px !important; }
+        .${CONFIG.badgeClassPrefix}-pos-1.${CONFIG.badgeClassPrefix}-stacked-1 { top: 60px !important; }
+        .${CONFIG.badgeClassPrefix}-pos-2.${CONFIG.badgeClassPrefix}-stacked-1 { top: 60px !important; }
+        .${CONFIG.badgeClassPrefix}-pos-3.${CONFIG.badgeClassPrefix}-stacked-1 { top: 60px !important; }
+        .${CONFIG.badgeClassPrefix}-pos-7.${CONFIG.badgeClassPrefix}-stacked-1 { bottom: 60px !important; }
+        .${CONFIG.badgeClassPrefix}-pos-8.${CONFIG.badgeClassPrefix}-stacked-1 { bottom: 60px !important; }
+        .${CONFIG.badgeClassPrefix}-pos-9.${CONFIG.badgeClassPrefix}-stacked-1 { bottom: 60px !important; }
         
         /* Animations */
-        .${CONFIG.badgePrefix}-animate-pulse {
-          animation: ${CONFIG.badgePrefix}-pulse 2s infinite;
+        .${CONFIG.badgeClassPrefix}-animate-pulse {
+          animation: ${CONFIG.badgeClassPrefix}-pulse 2s infinite;
         }
         
-        @keyframes ${CONFIG.badgePrefix}-pulse {
+        @keyframes ${CONFIG.badgeClassPrefix}-pulse {
           0% { transform: scale(1); }
           50% { transform: scale(1.1); }
           100% { transform: scale(1); }
         }
         
-        .${CONFIG.badgePrefix}-animate-bounce {
-          animation: ${CONFIG.badgePrefix}-bounce 1s infinite;
+        .${CONFIG.badgeClassPrefix}-animate-bounce {
+          animation: ${CONFIG.badgeClassPrefix}-bounce 1s infinite;
         }
         
-        @keyframes ${CONFIG.badgePrefix}-bounce {
+        @keyframes ${CONFIG.badgeClassPrefix}-bounce {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-5px); }
         }
         
-        .${CONFIG.badgePrefix}-animate-shake {
-          animation: ${CONFIG.badgePrefix}-shake 0.8s ease-in-out infinite;
+        .${CONFIG.badgeClassPrefix}-animate-shake {
+          animation: ${CONFIG.badgeClassPrefix}-shake 0.8s ease-in-out infinite;
         }
         
-        @keyframes ${CONFIG.badgePrefix}-shake {
+        @keyframes ${CONFIG.badgeClassPrefix}-shake {
           0%, 100% { transform: translateX(0); }
           20%, 60% { transform: translateX(-3px); }
           40%, 80% { transform: translateX(3px); }
@@ -348,29 +385,29 @@
         
         /* Responsive Styles */
         @media (max-width: 768px) {
-          .${CONFIG.badgePrefix} {
+          .${CONFIG.badgeClassPrefix} {
             font-size: 12px !important;
             padding: 3px 8px !important;
           }
           
-          .${CONFIG.badgePrefix}-circle {
+          .${CONFIG.badgeClassPrefix}-circle {
             width: 35px !important;
             height: 35px !important;
           }
           
-          .${CONFIG.badgePrefix}-pos-1 { top: 5px !important; left: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-2 { top: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-3 { top: 5px !important; right: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-4 { left: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-6 { right: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-7 { bottom: 5px !important; left: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-8 { bottom: 5px !important; }
-          .${CONFIG.badgePrefix}-pos-9 { bottom: 5px !important; right: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-1 { top: 5px !important; left: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-2 { top: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-3 { top: 5px !important; right: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-4 { left: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-6 { right: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-7 { bottom: 5px !important; left: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-8 { bottom: 5px !important; }
+          .${CONFIG.badgeClassPrefix}-pos-9 { bottom: 5px !important; right: 5px !important; }
         }
       `;
       
       document.head.appendChild(style);
-      utils.log('Base styles injected');
+      Utils.log('Base styles injected');
     },
 
     /**
@@ -378,17 +415,18 @@
      */
     fetchBadges: function() {
       const url = `${CONFIG.apiEndpoint}?shop=${this.state.shopDomain}`;
-      utils.log(`Fetching badges from ${url}`);
+      Utils.log(`Fetching badges from ${url}`);
       
-      utils.fetchData(url, (data) => {
-        if (!data || !data.badges || data.badges.length === 0) {
-          utils.log('No badges found or invalid data format', 'warn');
+      Utils.fetchData(url, (data) => {
+        // Use optional chaining to check data structure
+        if (!data?.badges?.length) {
+          Utils.log('No badges found or invalid data format', 'warn');
           return;
         }
         
         // Filter active badges
         this.state.badges = data.badges.filter(badge => badge.active === true);
-        utils.log(`Loaded ${this.state.badges.length} active badges`, 'info', this.state.badges);
+        Utils.log(`Loaded ${this.state.badges.length} active badges`, 'info', this.state.badges);
         
         if (this.state.badges.length === 0) return;
         
@@ -400,13 +438,13 @@
         // Start scanning for products
         this.scanForProducts();
         
-        // Set scan interval
+        // Set scan interval with limit
         let scanCount = 0;
         const scanInterval = setInterval(() => {
           scanCount++;
           if (scanCount >= CONFIG.maxScans) {
             clearInterval(scanInterval);
-            utils.log('Reached maximum scan count, stopping interval');
+            Utils.log('Reached maximum scan count, stopping interval');
             return;
           }
           this.scanForProducts();
@@ -452,7 +490,7 @@
         }
         
         if (shouldScan) {
-          utils.log('New product elements detected, scanning page');
+          Utils.log('New product elements detected, scanning page');
           this.scanForProducts();
         }
       });
@@ -463,28 +501,28 @@
         subtree: true
       });
       
-      utils.log('Mutation observer set up');
+      Utils.log('Mutation observer set up');
     },
 
     /**
      * Process product page
      */
     processProductPage: function() {
-      utils.log('Processing product page');
+      Utils.log('Processing product page');
       
       // Try to get product data
       const productData = this.getProductData();
       if (!productData) {
-        utils.log('No product data found on product page', 'warn');
+        Utils.log('No product data found on product page', 'warn');
         return;
       }
       
-      utils.log('Product data found', 'info', productData);
+      Utils.log('Product data found', 'info', productData);
       
       // Find image container
       const imageContainer = this.findProductImageContainer();
       if (!imageContainer) {
-        utils.log('Could not find product image container', 'warn');
+        Utils.log('Could not find product image container', 'warn');
         return;
       }
       
@@ -493,31 +531,40 @@
     },
 
     /**
-     * Get product data on product page
+     * Get product data using multiple methods
+     * Restructured based on senior feedback
      */
     getProductData: function() {
-      // Try different methods to access product data
-      
-      // Method 1: Check meta.product
-      if (typeof meta !== 'undefined' && meta.product) {
-        return meta.product;
+      // Define data sources in a structured way
+      const dataSources = [
+        () => meta?.product,
+        () => window.product,
+        () => ShopifyAnalytics?.meta?.product,
+        () => this.findProductJsonInScripts(),
+        () => {
+          const handle = this.extractProductHandleFromUrl(window.location.pathname);
+          return handle ? { handle, pending: true } : null;
+        }
+      ];
+
+      // Try each method in sequence until one returns data
+      for (const source of dataSources) {
+        try {
+          const data = source();
+          if (data) return data;
+        } catch (e) {
+          // Log but continue to next method if current one fails
+          Utils.log(`Error getting product data: ${e.message}`, 'error');
+        }
       }
       
-      // Method 2: Check window.product
-      if (window.product) {
-        return window.product;
-      }
-      
-      // Method 3: Check ShopifyAnalytics
-      if (
-        typeof ShopifyAnalytics !== 'undefined' &&
-        ShopifyAnalytics.meta &&
-        ShopifyAnalytics.meta.product
-      ) {
-        return ShopifyAnalytics.meta.product;
-      }
-      
-      // Method 4: Look for product JSON in script tags
+      return null;
+    },
+    
+    /**
+     * Find product JSON data in script tags
+     */
+    findProductJsonInScripts: function() {
       const jsonScriptSelectors = [
         'script[type="application/json"][data-product-json]',
         'script[id*="ProductJson-"]',
@@ -533,16 +580,10 @@
               return json;
             }
           } catch (e) {
-            // Ignore parsing errors
+            // Log parsing errors but continue trying
+            Utils.log(`Error parsing JSON from script: ${e.message}`, 'error');
           }
         }
-      }
-      
-      // Method 5: Extract handle from URL and fetch product data
-      const handle = this.extractProductHandleFromUrl(window.location.pathname);
-      if (handle) {
-        // Return placeholder with handle (we'll have to fetch data asynchronously)
-        return { handle: handle, pending: true };
       }
       
       return null;
@@ -645,7 +686,7 @@
       this.state.isProcessing = true;
       this.state.scanCount++;
       
-      utils.log(`Scanning for products (scan #${this.state.scanCount})`);
+      Utils.log(`Scanning for products (scan #${this.state.scanCount})`);
       
       // Handle many different theme structures to find products
       
@@ -655,7 +696,7 @@
       let processedCount = 0;
       
       if (productLinks.length > 0) {
-        utils.log(`Found ${productLinks.length} unprocessed product links`);
+        Utils.log(`Found ${productLinks.length} unprocessed product links`);
         
         for (let i = 0; i < productLinks.length; i++) {
           const link = productLinks[i];
@@ -698,7 +739,7 @@
         );
         
         if (productImages.length > 0) {
-          utils.log(`Found ${productImages.length} unprocessed product images`);
+          Utils.log(`Found ${productImages.length} unprocessed product images`);
           
           for (let i = 0; i < productImages.length; i++) {
             const img = productImages[i];
@@ -752,7 +793,7 @@
         );
         
         if (productGridItems.length > 0) {
-          utils.log(`Found ${productGridItems.length} unprocessed product grid items`);
+          Utils.log(`Found ${productGridItems.length} unprocessed product grid items`);
           
           for (let i = 0; i < productGridItems.length; i++) {
             const gridItem = productGridItems[i];
@@ -789,7 +830,7 @@
         }
       }
       
-      utils.log(`Processed ${processedCount} new product elements`);
+      Utils.log(`Processed ${processedCount} new product elements`);
       this.state.isProcessing = false;
     },
 
@@ -892,7 +933,7 @@
           callback(product);
         })
         .catch(error => {
-          utils.log(`Error fetching product data for ${handle}: ${error.message}`, 'error');
+          Utils.log(`Error fetching product data for ${handle}: ${error.message}`, 'error');
           callback(null);
         });
     },
@@ -907,7 +948,7 @@
       const productTags = Array.isArray(product.tags) ? product.tags : 
                          (typeof product.tags === 'string' ? product.tags.split(', ') : []);
       
-      utils.log(`Applying badges to product: ${product.title || product.handle}`, 'info', {
+      Utils.log(`Applying badges to product: ${product.title || product.handle}`, 'info', {
         productId: product.id,
         tags: productTags
       });
@@ -970,7 +1011,7 @@
      */
     createBadge: function(container, badge, product, position, stackIndex) {
       // Create unique ID
-      const badgeId = `${CONFIG.badgePrefix}-${product.id || Date.now()}-${badge.id}`;
+      const badgeId = `${CONFIG.badgeClassPrefix}-${product.id || Date.now()}-${badge.id}`;
       
       // Skip if badge already exists
       if (document.getElementById(badgeId)) {
@@ -980,23 +1021,23 @@
       // Create badge element
       const badgeElement = document.createElement('div');
       badgeElement.id = badgeId;
-      badgeElement.className = `${CONFIG.badgePrefix} ${CONFIG.badgePrefix}-pos-${position}`;
+      badgeElement.className = `${CONFIG.badgeClassPrefix} ${CONFIG.badgeClassPrefix}-pos-${position}`;
       
       // Add shape class
       if (badge.shape) {
-        badgeElement.classList.add(`${CONFIG.badgePrefix}-${badge.shape}`);
+        badgeElement.classList.add(`${CONFIG.badgeClassPrefix}-${badge.shape}`);
       } else {
-        badgeElement.classList.add(`${CONFIG.badgePrefix}-standard`);
+        badgeElement.classList.add(`${CONFIG.badgeClassPrefix}-standard`);
       }
       
       // Add animation class
       if (badge.animation && badge.animation !== 'none') {
-        badgeElement.classList.add(`${CONFIG.badgePrefix}-animate-${badge.animation}`);
+        badgeElement.classList.add(`${CONFIG.badgeClassPrefix}-animate-${badge.animation}`);
       }
       
       // Add stacked class if needed
       if (stackIndex > 0) {
-        badgeElement.classList.add(`${CONFIG.badgePrefix}-stacked-${stackIndex}`);
+        badgeElement.classList.add(`${CONFIG.badgeClassPrefix}-stacked-${stackIndex}`);
       }
       
       // Apply styles
@@ -1053,7 +1094,7 @@
         badgeElement.style.transformOrigin = 'center';
       }
       
-      utils.log(`Added badge "${badgeText}" to product ${product.title || product.handle}`);
+      Utils.log(`Added badge "${badgeText}" to product ${product.title || product.handle}`);
       this.state.appliedBadges++;
       
       return badgeElement;
@@ -1067,16 +1108,16 @@
       
       // Replace discount percentage
       if (text.includes('[DISCOUNT_PERCENT]') && product.compare_at_price) {
-        const comparePrice = utils.parseMoney(product.compare_at_price);
-        const price = utils.parseMoney(product.price);
-        const discountPercent = utils.calculateDiscount(comparePrice, price);
+        const comparePrice = Utils.parseMoney(product.compare_at_price);
+        const price = Utils.parseMoney(product.price);
+        const discountPercent = Utils.calculateDiscount(comparePrice, price);
         text = text.replace(/\[DISCOUNT_PERCENT\]/g, discountPercent);
       }
       
       // Replace discount amount
       if (text.includes('[DISCOUNT_AMOUNT]') && product.compare_at_price) {
-        const comparePrice = utils.parseMoney(product.compare_at_price);
-        const price = utils.parseMoney(product.price);
+        const comparePrice = Utils.parseMoney(product.compare_at_price);
+        const price = Utils.parseMoney(product.price);
         const discountAmount = (comparePrice - price).toFixed(2);
         text = text.replace(/\[DISCOUNT_AMOUNT\]/g, discountAmount);
       }
@@ -1123,14 +1164,12 @@
      */
     getCurrencySymbol: function() {
       // Try to get from Shopify
-      if (typeof Shopify !== 'undefined' && Shopify.currency) {
-        if (Shopify.currency.active) {
-          return Shopify.currency.active;
-        }
+      if (typeof Shopify !== 'undefined' && Shopify?.currency?.active) {
+        return Shopify.currency.active;
       }
       
       // Try to get from money format
-      if (typeof theme !== 'undefined' && theme.moneyFormat) {
+      if (typeof theme !== 'undefined' && theme?.moneyFormat) {
         const match = theme.moneyFormat.match(/\{\{\s*?amount_with_currency.*?\}\}/);
         if (match) {
           return 'INR'; // With currency symbol
@@ -1153,7 +1192,7 @@
       if (badge.includedProducts && badge.includedProducts.length > 0) {
         let found = false;
         for (const item of badge.includedProducts) {
-          if (item.id === product.id || item.id === product.id.toString()) {
+          if (item.id === product.id || item.id === product.id?.toString()) {
             found = true;
             break;
           }
@@ -1164,7 +1203,7 @@
       // Check excluded products
       if (badge.excludedProducts && badge.excludedProducts.length > 0) {
         for (const item of badge.excludedProducts) {
-          if (item.id === product.id || item.id === product.id.toString()) {
+          if (item.id === product.id || item.id === product.id?.toString()) {
             return false;
           }
         }
@@ -1177,7 +1216,8 @@
         
         for (const collection of productCollections) {
           const collectionId = typeof collection === 'object' ? collection.id : collection;
-          if (badge.includedCollections.includes(collectionId) || badge.includedCollections.includes(collectionId.toString())) {
+          if (badge.includedCollections.includes(collectionId) || 
+              badge.includedCollections.includes(collectionId?.toString())) {
             found = true;
             break;
           }
@@ -1192,7 +1232,8 @@
         
         for (const collection of productCollections) {
           const collectionId = typeof collection === 'object' ? collection.id : collection;
-          if (badge.excludedCollections.includes(collectionId) || badge.excludedCollections.includes(collectionId.toString())) {
+          if (badge.excludedCollections.includes(collectionId) || 
+              badge.excludedCollections.includes(collectionId?.toString())) {
             return false;
           }
         }
@@ -1245,7 +1286,7 @@
       
       // Check price
       if (badge.priceMin !== null || badge.priceMax !== null) {
-        const price = utils.parseMoney(product.price);
+        const price = Utils.parseMoney(product.price);
         
         if (badge.priceMin !== null && price < badge.priceMin) {
           return false;
@@ -1262,9 +1303,9 @@
           return false;
         }
         
-        const comparePrice = utils.parseMoney(product.compare_at_price);
-        const price = utils.parseMoney(product.price);
-        const discountPercent = utils.calculateDiscount(comparePrice, price);
+        const comparePrice = Utils.parseMoney(product.compare_at_price);
+        const price = Utils.parseMoney(product.price);
+        const discountPercent = Utils.calculateDiscount(comparePrice, price);
         
         if (discountPercent < badge.minDiscountPercent) {
           return false;
