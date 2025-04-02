@@ -6,7 +6,7 @@
   // Configuration
   const CONFIG = {
     debug: false,  // Enable for console logging
-    apiEndpoint: 'https://tagmaster.shopyfi.in/apps/tagify/badges',  // Endpoint to fetch badge data
+    apiEndpoint: 'apps/badges',  // Endpoint to fetch badge data
     scanInterval: 1500,  // Milliseconds between scans
     maxScans: 20,  // Maximum number of scans to perform
     badgeZIndex: 999,  // Z-index for badges
