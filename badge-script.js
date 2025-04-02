@@ -6,7 +6,7 @@
   // Configuration
   const CONFIG = {
     debug: false,
-    apiEndpoint: 'apps/badges',
+    apiEndpoint: 'https://tagmaster.shopyfi.in/apps/tagify/badges',
     badgePrefix: 'tm-badge',
     containerClass: 'tm-badge-container',
     scanInterval: 1500,
